@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Trash to Treasure - Edukasi Sampah Organik & Anorganik</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(145deg, #1a5f2a 0%, #0e3a1a 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', 'Poppins', 'Comic Neue', system-ui, sans-serif;
+            padding: 20px;
+        }
+
+        /* Kontainer utama */
+        .game-container {
+            background: #2b4b1e;
+            border-radius: 64px;
+            padding: 20px;
+            box-shadow: 0 25px 40px rgba(0,0,0,0.4), inset 0 1px 3px rgba(255,255,255,0.2);
+            border: 2px solid #e9c891;
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border-radius: 36px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            cursor: pointer;
+            background-color: #8bb56a;
+        }
+
+        /* Panel UI */
+        .info-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #fef7cf;
+            padding: 12px 24px;
+            margin-top: 18px;
+            border-radius: 60px;
+            gap: 15px;
+            flex-wrap: wrap;
+            box-shadow: inset 0 1px 4px rgba(0,0,0,0.1), 0 6px 12px rgba(0,0,0,0.2);
+        }
+
+        .stats {
+            display: flex;
+            gap: 25px;
+            background: #2e241f;
+            padding: 8px 24px;
+            border-radius: 40px;
+            color: #ffefb9;
+            font-weight: bold;
+        }
+
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1.2rem;
+        }
+
+        .stat span:first-child {
+            background: #e6b422;
+            padding: 4px 12px;
+            border-radius: 30px;
+            color: #2c1a0c;
+        }
+
+        button {
+            background: #ffb347;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 50px;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 0 #a45d1a;
+            font-family: inherit;
+        }
+
+        button:active {
+            transform: translateY(2px);
+            box-shadow: 0 1px 0 #a45d1a;
+        }
+
+        .login-area {
+            display: flex;
+            gap: 12px;
+            background: #d9c48b;
+            padding: 6px 18px;
+            border-radius: 40px;
+        }
+
+        .login-area input {
+            padding: 6px 12px;
+            border-radius: 30px;
+            border: none;
+            outline: none;
+            font-size: 0.9rem;
+        }
+
+        .message-box {
+            background: #1f3b1a;
+            padding: 8px 18px;
+            border-radius: 28px;
+            color: #f9e7b3;
+            font-size: 0.9rem;
+            max-width: 220px;
+            text-align: center;
+        }
+
+        @keyframes fadeZoom {
+            0% { opacity: 0; transform: scale(0.8); filter: blur(6px);}
+            100% { opacity: 1; transform: scale(1); filter: blur(0);}
+        }
+
+        .animate-enter {
+            animation: fadeZoom 0.7s cubic-bezier(0.2, 0.9, 0.4, 1.1) forwards;
+        }
+    </style>
+</head>
+<body>
+<div class="game-container" id="gameWrapper">
+    <canvas id="gameCanvas" width="900" height="550"></canvas>
+    <div class="info-panel">
+        <div class="stats">
+            <div class="stat"><span>❤️ Nyawa</span> <span id="livesVal">3</span></div>
+            <div class="stat"><span>⭐ Skor</span> <span id="scoreVal">0</span></div>
+        </div>
+        <div class="login-area" id="loginZone">
+            <input type="text" id="usernameInput" placeholder="Nama Pemain" maxlength="16">
+            <button id="loginBtn">Masuk / Mulai</button>
+        </div>
+        <button id="restartBtn" style="background:#5d8736; color:white;">🌱 Restart Game</button>
+        <div class="message-box" id="infoMsg">🔐 Login dulu untuk bermain!</div>
+    </div>
+</div>
+
+<script>
+    (function(){
+        // ------------------- GAME KONFIGURASI ------------------
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Ukuran canvas 900x550
+        const W = 900, H = 550;
+        
+        // Variabel game state
+        let loggedIn = false;
+        let playerName = "";
+        let gameActive = false;     // apakah game berjalan (setelah start)
+        let lives = 3;
+        let score = 0;
+        let finalMessage = "";
+        let showFinal = false;
+        
+        // Daftar sampah (objek jatuh)
+        let trashItems = [];
+        
+        // Kontrol pemain (keranjang pemilah)
+        let player = {
+            x: W/2 - 50,
+            y: H - 70,
+            width: 100,
+            height: 45
+        };
+        
+        // Spawn timer
+        let spawnCounter = 0;
+        let frameRequest;
+        let lastTimestamp = 0;
+        
+        // Animasi transisi masuk game (fade zoom) sudah di CSS class, kita trigger saat login sukses dan game dimulai
+        let entranceAnimation = false;
+        let animationFrameCount = 0;
+        
+        // Soundtrack (menggunakan Web Audio simple - tanpa file external, buat nada latar sederhana dengan oscillator? tapi tidak lag / delay, pakai audio context hati2. Lebih baik gunakan nada alam lembut menggunakan loop AudioContext? lebih aman gunakan nada ambient sederhana yang tidak mengganggu.
+        // Agar tidak ribet dan tanpa external file, kita buat oscillator ambient lembut saat game aktif, tapi hati2 banyak browser minta interaksi. Lebih baik kita buat "suara ambien" sederhana yang diinisiasi setelah user klik canvas/button.
+        let audioCtx = null;
+        let bgGain = null;
+        let bgOsc = null;
+        let isAudioAllowed = false;
+        
+        function initAudio() {
+            if(audioCtx) return;
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                bgGain = audioCtx.createGain();
+                bgGain.gain.value = 0.18; // volume alam
+                bgGain.connect(audioCtx.destination);
+                // buat latar belakang ambient (suara gemericik alam, gunakan noise + tone lembut)
+                // agar tidak monoton buat kombinasi simple noise + sinewave
+                const bufferSize = 4096;
+                const noiseNode = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+                noiseNode.onaudioprocess = function(e) {
+                    if(!gameActive) return;
+                    const output = e.outputBuffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) {
+                        output[i] = (Math.random() - 0.5) * 0.08;
+                    }
+                };
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = "lowpass";
+                filter.frequency.value = 800;
+                noiseNode.connect(filter);
+                filter.connect(bgGain);
+                
+                // nada dasar lembut (bird-like)
+                const osc = audioCtx.createOscillator();
+                osc.type = "sine";
+                osc.frequency.value = 440;
+                const oscGain = audioCtx.createGain();
+                oscGain.gain.value = 0.05;
+                osc.connect(oscGain);
+                oscGain.connect(bgGain);
+                osc.start();
+                // background yang konstan
+                bgOsc = osc;
+            } catch(e) { console.log("audio tidak didukung"); }
+        }
+        
+        function playAmbient() {
+            if(!isAudioAllowed && audioCtx && gameActive) {
+                audioCtx.resume().then(()=>{ isAudioAllowed=true; });
+            }
+        }
+        
+        // ---------- GAME MECHANICS ----------
+        // Tipe sampah: "organik" (hijau) dan "anorganik" (biru/kuning)
+        // edukasi: organik -> kompos, anorganik -> daur ulang
+        // aturan: pemain menangkap dengan sisi keranjang? lebih interaktif: keranjang memiliki 2 mode? 
+        // Namun agar mudah: pemain menekan tombol keyboard A (organik) dan S (anorganik) saat sampah menyentuh keranjang?
+        // Tidak user friendly. Lebih baik: Keranjang memiliki dua sisi: kiri untuk organik, kanan untuk anorganik. Player menggerakkan mouse atau arrow?
+        // Lebih sederhana: Pemain menggerakkan keranjang dengan mouse X, dan ketika sampah mengenai keranjang, secara otomatis akan dinilai berdasarkan tipe sampah jika pemain "menekan spasi"? tidak intuitif.
+        // Cara terbaik: dua tombol di layar? Tapi edukasi bagus: Pemain harus memilah dengan menekan tombol panah atas untuk organik, bawah untuk anorganik?
+        // Namun agar game tidak membosankan & mudah: kami buat sistem drag & drop? Tidak pas.
+        // Ide: Di dalam keranjang ada tulisan "Organik (⬆️)" dan "Anorganik (⬇️)" dan pemain menekan panah atas/bawah saat sampah menyentuh keranjang.
+        // Sangat edukatif & menantang! tanpa delay. 
+        let pendingTrash = null; // sampah yang sedang menyentuh keranjang
+        let touchCooldown = 0;
+        
+        // Reset game state
+        function resetGame() {
+            if(!loggedIn) return;
+            gameActive = true;
+            showFinal = false;
+            lives = 3;
+            score = 0;
+            trashItems = [];
+            spawnCounter = 0;
+            touchCooldown = 0;
+            pendingTrash = null;
+            updateUI();
+            finalMessage = "";
+            // mulai spawn cepat
+        }
+        
+        // update UI teks
+        function updateUI() {
+            document.getElementById('livesVal').innerText = lives;
+            document.getElementById('scoreVal').innerText = score;
+        }
+        
+        // spawn sampah
+        function spawnTrash() {
+            let type = Math.random() < 0.5 ? "organik" : "anorganik";
+            let x = 30 + Math.random() * (W - 80);
+            let y = -30;
+            let speed = 2 + Math.random() * 2.3;
+            let color = type === "organik" ? "#5c9c3e" : "#3f7e9e";
+            let icon = type === "organik" ? "🍂" : "🥤";
+            trashItems.push({
+                x, y, w: 42, h: 42, type, speed, color, icon,
+            });
+        }
+        
+        // collision antara player dan trash
+        function handleCollisions() {
+            if(!gameActive) return;
+            for(let i=0; i<trashItems.length; i++) {
+                const t = trashItems[i];
+                // kotak player
+                if(t.y + t.h > player.y && t.y < player.y+player.height &&
+                   t.x + t.w > player.x && t.x < player.x+player.width) {
+                    // sampah menyentuh keranjang, simpan sebagai pending
+                    if(touchCooldown <= 0) {
+                        pendingTrash = t;
+                        // tampilkan instruksi di canvas (pilihan)
+                        touchCooldown = 30; // cooldown 0.5 detik (30 frame ~ 0.5s di 60fps)
+                    }
+                    return;
+                }
+            }
+        }
+        
+        // Proses pemilahan berdasarkan input (atas/organik, bawah/anorganik)
+        function processSort(key) {
+            if(!gameActive || lives<=0) return false;
+            if(pendingTrash && touchCooldown > 0) {
+                let trash = pendingTrash;
+                let isCorrect = false;
+                if(key === 'ArrowUp' && trash.type === "organik") isCorrect = true;
+                else if(key === 'ArrowDown' && trash.type === "anorganik") isCorrect = true;
+                
+                if(isCorrect) {
+                    // benar
+                    score += 10;
+                    updateUI();
+                    // hapus sampah
+                    const idx = trashItems.indexOf(trash);
+                    if(idx !== -1) trashItems.splice(idx,1);
+                    pendingTrash = null;
+                    touchCooldown = 0;
+                    // efek suara positif sederhana
+                    playBeep(true);
+                } else {
+                    // salah: kurangi nyawa
+                    lives--;
+                    updateUI();
+                    playBeep(false);
+                    // hapus sampah karena gagal memilah
+                    const idx = trashItems.indexOf(trash);
+                    if(idx !== -1) trashItems.splice(idx,1);
+                    pendingTrash = null;
+                    touchCooldown = 0;
+                    if(lives <= 0) {
+                        gameActive = false;
+                        showFinal = true;
+                        finalMessage = `📊 NILAI AKHIR: ${score} Poin. \nMakna: Setiap sampah yang tidak terkelola merusak bumi! Dengan memilah, ${playerName} menyelamatkan lingkungan. Ingat, Organik → Kompos, Anorganik → Daur Ulang. 🌍✨`;
+                        if(audioCtx) bgGain.gain.value = 0.05;
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+        
+        function playBeep(success) {
+            if(!audioCtx) return;
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = "sine";
+                osc.frequency.value = success ? 880 : 440;
+                gain.gain.value = 0.2;
+                osc.start();
+                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime+0.3);
+                osc.stop(audioCtx.currentTime+0.3);
+            } catch(e) {}
+        }
+        
+        // update per frame
+        function updateGame() {
+            if(!gameActive || lives<=0) {
+                if(lives<=0 && !showFinal) {
+                    showFinal=true;
+                    finalMessage = `📊 NILAI AKHIR: ${score} Poin. \nMakna: Setiap sampah yang tidak terkelola merusak bumi! Dengan memilah, ${playerName} menyelamatkan lingkungan. Ingat, Organik → Kompos, Anorganik → Daur Ulang. 🌍✨`;
+                    if(audioCtx) bgGain.gain.value = 0.05;
+                }
+                return;
+            }
+            
+            if(touchCooldown > 0) touchCooldown--;
+            else pendingTrash = null;
+            
+            // spawn timer
+            spawnCounter++;
+            if(spawnCounter > 35) {
+                spawnCounter = 0;
+                if(trashItems.length < 12) spawnTrash();
+            }
+            
+            // update posisi sampah
+            for(let i=0; i<trashItems.length; i++) {
+                trashItems[i].y += trashItems[i].speed;
+                if(trashItems[i].y > H+50) {
+                    // sampah jatuh ke tanah tanpa disortir -> kurangi nyawa
+                    trashItems.splice(i,1);
+                    lives--;
+                    updateUI();
+                    if(lives <= 0) {
+                        gameActive = false;
+                        showFinal = true;
+                        finalMessage = `📊 NILAI AKHIR: ${score} Poin. \nMakna: Sampah yang berserakan merusak alam! Teruslah memilah dan kurangi sampah. ${playerName}, pahlawan bumi! 🍃`;
+                        if(audioCtx) bgGain.gain.value = 0.05;
+                    }
+                    i--;
+                }
+            }
+            handleCollisions();
+        }
+        
+        // ----- GAMBAR SEMUA ELEMEN DENGAN ANIMASI ALAM -------
+        function drawBackground() {
+            // langit & kebun
+            const grad = ctx.createLinearGradient(0,0,0,H);
+            grad.addColorStop(0,"#c6e0b4");
+            grad.addColorStop(0.7,"#9bbb6b");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0,0,W,H);
+            // pohon & semak
+            ctx.fillStyle = "#437a2c";
+            for(let i=0;i<12;i++) {
+                ctx.beginPath();
+                ctx.ellipse(50+i*90, H-40, 35, 45, 0, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = "#5f9e3a";
+            }
+            ctx.fillStyle = "#b97f44";
+            for(let i=0;i<8;i++) ctx.fillRect(40+i*110, H-70, 18, 60);
+            ctx.fillStyle = "#e0b074";
+            for(let i=0;i<8;i++) ctx.beginPath(); ctx.arc(45, H-78, 18, 0, Math.PI*2); ctx.fill();
+            // bunga
+            for(let i=0;i<20;i++) {
+                ctx.fillStyle = `hsl(${40+Math.sin(i)*20}, 70%, 65%)`;
+                ctx.beginPath();
+                ctx.arc(30+i*47, H-25, 6, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+        
+        function drawTrash() {
+            for(let t of trashItems) {
+                ctx.shadowBlur = 4;
+                ctx.fillStyle = t.color;
+                ctx.beginPath();
+                ctx.roundRect(t.x, t.y, t.w, t.h, 12);
+                ctx.fill();
+                ctx.font = `26px "Segoe UI Emoji"`;
+                ctx.fillStyle = "white";
+                ctx.shadowBlur = 2;
+                ctx.fillText(t.icon, t.x+8, t.y+32);
+                ctx.fillStyle = "#2c2c2c";
+                ctx.font = "bold 14px Poppins";
+                ctx.fillText(t.type==="organik?"? "Organik":"Anorganik", t.x+5, t.y+18);
+            }
+            ctx.shadowBlur = 0;
+        }
+        
+        function drawPlayer() {
+            ctx.shadowBlur = 5;
+            ctx.fillStyle = "#e0a158";
+            ctx.beginPath();
+            ctx.roundRect(player.x, player.y, player.width, player.height, 20);
+            ctx.fill();
+            ctx.fillStyle = "#a5662a";
+            ctx.font = "bold 22px Poppins";
+            ctx.fillText("🗑️", player.x+8, player.y+33);
+            ctx.fillStyle = "#3e2a1a";
+            ctx.font = "bold 12px system-ui";
+            ctx.fillText("PILAH", player.x+35, player.y+28);
+            // instruksi tombol
+            ctx.fillStyle = "#fff6cf";
+            ctx.font = "bold 14px monospace";
+            ctx.fillText("⬆️ Organik | ⬇️ Anorganik", player.x+5, player.y-8);
+            ctx.shadowBlur = 0;
+        }
+        
+        function drawUIandPrompt() {
+            if(pendingTrash && touchCooldown>0 && gameActive && lives>0) {
+                ctx.fillStyle = "#2d2218cc";
+                ctx.fillRect(0,0,W,H);
+                ctx.font = "bold 24px Poppins";
+                ctx.fillStyle = "#f9f0b6";
+                ctx.shadowBlur = 0;
+                ctx.fillText(`❗ PILAH SAMPAH ❗`, W/2-130, H/2-50);
+                ctx.font = "20px Poppins";
+                ctx.fillStyle = "#fdd27b";
+                ctx.fillText(`⬆️  Tekan PANAH ATAS jika ORGANIK  ⬆️`, W/2-200, H/2+20);
+                ctx.fillText(`⬇️  Tekan PANAH BAWAH jika ANORGANIK ⬇️`, W/2-200, H/2+70);
+                ctx.fillStyle = "#c0ffb0";
+                ctx.fillText(`Sampah: ${pendingTrash.type==="organik" ? "🍂 Organik" : "🥤 Anorganik"}`, W/2-100, H/2+130);
+            }
+            if(showFinal && !gameActive) {
+                ctx.fillStyle = "#000000aa";
+                ctx.fillRect(0,0,W,H);
+                ctx.fillStyle = "#ffe6b3";
+                ctx.font = "bold 28px Poppins";
+                ctx.fillText("🏆 GAME SELESAI 🏆", W/2-160, 130);
+                ctx.font = "20px Poppins";
+                ctx.fillStyle = "#fef5cf";
+                const lines = finalMessage.split("\n");
+                for(let i=0;i<lines.length;i++) {
+                    ctx.fillText(lines[i], W/2-280, 220 + i*40);
+                }
+                ctx.font = "bold 18px";
+                ctx.fillStyle = "#ffc048";
+                ctx.fillText("✨ Tekan 'Restart Game' untuk bermain lagi ✨", W/2-240, H-70);
+            }
+        }
+        
+        function drawGame() {
+            drawBackground();
+            drawTrash();
+            drawPlayer();
+            drawUIandPrompt();
+            // info tambahan edukasi
+            ctx.font = "14px Poppins";
+            ctx.fillStyle = "#2b3b1a";
+            ctx.fillText("🌿 Organik => Kompos | ♻️ Anorganik => Daur Ulang", 20, 30);
+            if(!loggedIn) {
+                ctx.fillStyle = "#251d12cc";
+                ctx.fillRect(0,0,W,H);
+                ctx.font = "bold 28px Poppins";
+                ctx.fillStyle = "#fff1b5";
+                ctx.fillText("🌍 TRASH TO TREASURE 🌍", W/2-180, H/2-70);
+                ctx.font = "18px";
+                ctx.fillText("Login terlebih dahulu untuk memulai petualangan memilah sampah!", W/2-280, H/2);
+            } else if(!gameActive && !showFinal && loggedIn){
+                ctx.fillStyle = "#2b4022cc";
+                ctx.fillRect(0,0,W,H);
+                ctx.font = "bold 28px";
+                ctx.fillStyle = "gold";
+                ctx.fillText(`Halo ${playerName}, klik MULAI!`, W/2-180, H/2-30);
+                ctx.font = "18px";
+                ctx.fillStyle = "#e9f5d9";
+                ctx.fillText("Tekan tombol 'Masuk / Mulai' untuk memulai game", W/2-180, H/2+40);
+            }
+        }
+        
+        // animasi masuk global (trigger)
+        function applyEnterAnimation() {
+            const wrap = document.getElementById('gameWrapper');
+            wrap.classList.remove('animate-enter');
+            void wrap.offsetWidth;
+            wrap.classList.add('animate-enter');
+            setTimeout(()=>{ wrap.classList.remove('animate-enter'); }, 800);
+        }
+        
+        // ---------- LOGIN DAN MULAI GAME ----------
+        function handleLogin() {
+            const inputName = document.getElementById('usernameInput').value.trim();
+            if(inputName === "") {
+                document.getElementById('infoMsg').innerText = "⚠️ Masukkan nama terlebih dahulu!";
+                return;
+            }
+            playerName = inputName;
+            loggedIn = true;
+            gameActive = true;   // langsung aktif setelah login
+            lives = 3;
+            score = 0;
+            trashItems = [];
+            pendingTrash = null;
+            touchCooldown = 0;
+            showFinal = false;
+            updateUI();
+            document.getElementById('infoMsg').innerHTML = `✅ Selamat datang ${playerName}! Gunakan ⬆️⬇️ untuk memilah.`;
+            // animasi masuk
+            applyEnterAnimation();
+            // aktifkan suara ambient
+            if(!audioCtx) initAudio();
+            if(audioCtx && audioCtx.state !== 'running') {
+                audioCtx.resume().then(()=>{
+                    isAudioAllowed=true;
+                    if(bgGain) bgGain.gain.value = 0.2;
+                }).catch(e=>{});
+            } else if(bgGain) bgGain.gain.value = 0.2;
+            // bersihkan
+            if(!gameActive) gameActive=true;
+        }
+        
+        function restartGame() {
+            if(!loggedIn) {
+                document.getElementById('infoMsg').innerText = "Login dulu sebelum restart!";
+                return;
+            }
+            gameActive = true;
+            lives = 3;
+            score = 0;
+            trashItems = [];
+            pendingTrash = null;
+            touchCooldown = 0;
+            showFinal = false;
+            spawnCounter = 0;
+            updateUI();
+            if(audioCtx && bgGain) bgGain.gain.value = 0.2;
+            applyEnterAnimation();
+            document.getElementById('infoMsg').innerHTML = `🌱 Game di-restart! Terus pilah sampah ${playerName}!`;
+        }
+        
+        // Event keyboard
+        window.addEventListener('keydown', (e) => {
+            const key = e.key;
+            if(key === 'ArrowUp' || key === 'ArrowDown') {
+                e.preventDefault();
+                if(loggedIn && gameActive && lives>0 && !showFinal) {
+                    processSort(key);
+                } else if(!loggedIn) {
+                    document.getElementById('infoMsg').innerText = "Login dulu untuk bermain!";
+                }
+            }
+        });
+        
+        // Mouse move untuk keranjang
+        canvas.addEventListener('mousemove', (e) => {
+            if(!loggedIn) return;
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            let mouseX = (e.clientX - rect.left) * scaleX;
+            mouseX = Math.min(Math.max(mouseX, 10), W - player.width - 10);
+            player.x = mouseX;
+        });
+        
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if(!loggedIn) return;
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            let touchX = (touch.clientX - rect.left) * (canvas.width/rect.width);
+            touchX = Math.min(Math.max(touchX, 10), W - player.width - 10);
+            player.x = touchX;
+        });
+        
+        // tombol
+        document.getElementById('loginBtn').addEventListener('click', handleLogin);
+        document.getElementById('restartBtn').addEventListener('click', restartGame);
+        
+        // Animasi utama
+        function gameLoop() {
+            updateGame();
+            drawGame();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // init default draw
+        drawGame();
+        gameLoop();
+        
+        // resize canvas jika perlu tidak diubah
+        // inisialisasi posisi player
+        player.x = W/2 - 50;
+    })();
+    
+    // helper roundRect
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+        CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+            if (w < 2 * r) r = w / 2;
+            if (h < 2 * r) r = h / 2;
+            this.moveTo(x+r, y);
+            this.lineTo(x+w-r, y);
+            this.quadraticCurveTo(x+w, y, x+w, y+r);
+            this.lineTo(x+w, y+h-r);
+            this.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+            this.lineTo(x+r, y+h);
+            this.quadraticCurveTo(x, y+h, x, y+h-r);
+            this.lineTo(x, y+r);
+            this.quadraticCurveTo(x, y, x+r, y);
+            return this;
+        };
+    }
+</script>
+</body>
+</html>
